@@ -1,0 +1,70 @@
+# Cloud Build pipeline for salesforce-mcp
+#
+# Run manually:  gcloud builds submit --config cloudbuild.yaml --project your-gcp-project .
+# Or via script: npm run deploy
+#
+# $PROJECT_ID is automatically set to your-gcp-project by gcloud builds submit.
+# The deploy step inherits all existing env vars and secrets from Cloud Run —
+# no need to re-specify them here unless you're changing them.
+
+steps:
+  # Step 1: Security scan — fail the build on critical/high vulnerabilities
+  - name: "node:22-slim"
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        npm ci --ignore-scripts
+        npm audit --audit-level=high
+
+  # Step 2: Build the container image from the Dockerfile
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - build
+      - -t
+      - gcr.io/$PROJECT_ID/salesforce-mcp
+      - .
+
+  # Step 3: Push the image to Container Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - push
+      - gcr.io/$PROJECT_ID/salesforce-mcp
+
+  # Step 4: Deploy the new image to Cloud Run
+  # Only updates the image — all existing env vars, secrets, and config are preserved.
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - salesforce-mcp
+      - --image
+      - gcr.io/$PROJECT_ID/salesforce-mcp
+      - --region
+      - us-central1
+      - --platform
+      - managed
+      - --quiet
+
+  # Step 5: Restore allUsers invoker binding
+  # gcloud run deploy resets IAM on every run, which removes public access and
+  # breaks all traffic (Cloud Run returns 403). Auth is handled at the app layer
+  # (Google OAuth in Express), so allUsers invoker is required.
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - add-iam-policy-binding
+      - salesforce-mcp
+      - --region
+      - us-central1
+      - --member
+      - allUsers
+      - --role
+      - roles/run.invoker
+
+# Store the built image in Container Registry
+images:
+  - gcr.io/$PROJECT_ID/salesforce-mcp
