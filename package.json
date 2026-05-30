@@ -18,7 +18,7 @@
     "@modelcontextprotocol/sdk": "^1.12.1",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "jsforce": "^3.6.0",
+    "jsforce": "^3.10.15",
     "zod": "^4.3.6"
   },
   "devDependencies": {
